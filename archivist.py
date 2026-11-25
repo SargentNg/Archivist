@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scan_sorter.py — watch a folder for scanner output and sort PDFs into
+archivist.py — watch a folder for scanner output and sort PDFs into
 <output>/<source>/<type>/ automatically.
 
 How it works
@@ -28,7 +28,7 @@ How it works
 
 Usage
 -----
-    python3 scan_sorter.py /path/to/scanner-outdir [options]
+    python3 archivist.py /path/to/scanner-outdir [options]
 
 Options:
     --watch-dir DIR    folder to watch (positional also accepted)
@@ -41,8 +41,8 @@ Options:
     --leave-crud       don't move non-PDF files to skipped/
     --log-to FILE      also write logs to this file
     --after-batch CMD  shell command run after new docs are sorted (env:
-                       SCAN_SORTER_OUTPUT_DIR, SCAN_SORTER_WATCH_DIR,
-                       SCAN_SORTER_BATCH_DOCS, SCAN_SORTER_SRC_FILE)
+                       ARCHIVIST_OUTPUT_DIR, ARCHIVIST_WATCH_DIR,
+                       ARCHIVIST_BATCH_DOCS, ARCHIVIST_SRC_FILE)
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ try:
 except ImportError:
     HAVE_WATCHDOG = False  # fall back to polling
 
-log = logging.getLogger("scan_sorter")
+log = logging.getLogger("archivist")
 
 # --------------------------------------------------------------------------
 # tunables
@@ -349,7 +349,7 @@ def write_document(pdf_src: str, page_idxs: list[int], out_path: str,
             dst.set_metadata({
                 "title": os.path.splitext(os.path.basename(out_path))[0],
                 "keywords": tag,
-                "creator": "scan-sorter",
+                "creator": "archivist",
             })
         dst.save(tmp.name)
     finally:
@@ -846,10 +846,10 @@ def run_after_batch(args, n_docs: int, src_file: str = "") -> None:
         return
     env = dict(os.environ)
     env.update({
-        "SCAN_SORTER_OUTPUT_DIR": args.output_dir,
-        "SCAN_SORTER_WATCH_DIR": args.watch_dir,
-        "SCAN_SORTER_BATCH_DOCS": str(n_docs),
-        "SCAN_SORTER_SRC_FILE": src_file,
+        "ARCHIVIST_OUTPUT_DIR": args.output_dir,
+        "ARCHIVIST_WATCH_DIR": args.watch_dir,
+        "ARCHIVIST_BATCH_DOCS": str(n_docs),
+        "ARCHIVIST_SRC_FILE": src_file,
     })
     what = f"{n_docs} new document(s)" if n_docs > 0 else "batch"
     if src_file:

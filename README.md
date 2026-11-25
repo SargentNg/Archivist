@@ -1,4 +1,4 @@
-# scan-sorter
+# Archivist
 
 Watches a folder for newly-arriving scanner output (e.g. a scanner's
 save-to-PDF destination) and automatically sorts each PDF into
@@ -35,20 +35,20 @@ python3 -m venv .venv
 ## Usage
 
 ```
-scan_sorter.py WATCH_DIR [options]
+archivist.py WATCH_DIR [options]
 ```
 
 Continuous mode (default) watches the folder forever:
 
 ```sh
-.venv/bin/python scan_sorter.py /path/to/scanner-outdir
+.venv/bin/python archivist.py /path/to/scanner-outdir
 ```
 
 One-shot mode — process whatever is already in the folder, then exit
 (useful for testing or a cron-style sweep):
 
 ```sh
-.venv/bin/python scan_sorter.py /path/to/scanner-outdir --once
+.venv/bin/python archivist.py /path/to/scanner-outdir --once
 ```
 
 ### Options
@@ -93,7 +93,7 @@ One-shot mode — process whatever is already in the folder, then exit
     `utility-bill_2025-10-31_scanned.pdf` — appended by the program on top
     of the LLM/rule name (`--no-tag-in-name` to keep names bare)
   - in the PDF's own metadata: `keywords` = the tag, `title` = the filename,
-    `creator` = `scan-sorter` — visible in any viewer's document properties
+    `creator` = `Archivist` — visible in any viewer's document properties
     and greppable (`pdftotext -v` aside, `fitz` / `pdfinfo` can read it)
 - **PDFs** are processed, then the original is moved to
   `<watch-dir>/processed/` (unless `--keep-originals`).
@@ -227,7 +227,7 @@ model's default reasoning behavior.
 
 ## Tunables
 
-Constants at the top of `scan_sorter.py`:
+Constants at the top of `archivist.py`:
 
 | Constant | Value | Meaning |
 | --- | --- | --- |
@@ -263,7 +263,7 @@ to your OneDrive with **rclone** (Microsoft Graph). Two complementary paths:
 1. **Immediate** — the program runs your `--after-batch` command the moment
    new documents are sorted, so files land in the shared folder seconds
    after scanning.
-2. **Safety net** — a user systemd timer (`scan-sorter-sync.timer`) runs the
+2. **Safety net** — a user systemd timer (`archivist-sync.timer`) runs the
    same copy every 10 minutes, catching anything the hook missed (e.g. files
    produced before the hook existed, or a transient network blip).
 
@@ -276,16 +276,16 @@ to your OneDrive with **rclone** (Microsoft Graph). Two complementary paths:
 That script logs rclone in to your personal OneDrive (follow the browser
 sign-in it prints), shows your OneDrive root, and asks for the name of the
 shared folder. It stores the destination in
-`~/.config/scan-sorter/onedrive.env`.
+`~/.config/archivist/onedrive.env`.
 
 ### Wiring the hook into the program
 
 Run the watcher with:
 
 ```sh
-.venv/bin/python scan_sorter.py /path/to/scanner-outdir \
-    --after-batch 'bash ~/.local/bin/scan-sorter-onedrive-sync.sh' \
-    --log-to /path/to/scan-sorter.log
+.venv/bin/python archivist.py /path/to/scanner-outdir \
+    --after-batch 'bash ~/.local/bin/archivist-onedrive-sync.sh' \
+    --log-to /path/to/archivist.log
 ```
 
 The hook script reads the same `onedrive.env` as the timer, so hook and

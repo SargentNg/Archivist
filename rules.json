@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "rules for scan_sorter.py - all patterns are case-insensitive Python regexes.",
+    "rules for archivist.py - all patterns are case-insensitive Python regexes.",
     "A page scores each source/type by number of matches; a hit in the top ~500",
     "chars of the page also earns a +2 'heading' bonus. First match wins exact",
     "score ties, so put more specific rules earlier.",
