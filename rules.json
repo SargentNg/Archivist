@@ -19,6 +19,55 @@
       ]
     },
     {
+      "name": "Schwab",
+      "patterns": [
+        "\\bschwab\\b"
+      ]
+    },
+    {
+      "name": "Etrade",
+      "patterns": [
+        "\\betrade\\b"
+      ]
+    },
+    {
+      "name": "Freedom Mortgage",
+      "patterns": [
+        "freedom\\s+mortgage"
+      ]
+    },
+    {
+      "name": "Hawaii Gas",
+      "patterns": [
+        "hawaii\\s+gas\\b"
+      ]
+    },
+    {
+      "name": "Hawaiian Electric",
+      "patterns": [
+        "hawaiian\\s+electric",
+        "\\bheco\\b"
+      ]
+    },
+    {
+      "name": "Foxbury Park HOA",
+      "patterns": [
+        "foxbury\\s+park"
+      ]
+    },
+    {
+      "name": "HomeDepot",
+      "patterns": [
+        "home\\s*depot"
+      ]
+    },
+    {
+      "name": "Tenants",
+      "patterns": [
+        "\\btenants?\\b"
+      ]
+    },
+    {
       "name": "Acme",
       "patterns": [
         "\\bacme\\b"
@@ -70,6 +119,49 @@
       ]
     },
     {
+      "name": "1099-MISC",
+      "patterns": [
+        "1099\\s*-?\\s*MISC"
+      ]
+    },
+    {
+      "name": "1099-INT",
+      "patterns": [
+        "1099\\s*-?\\s*INT\\b"
+      ]
+    },
+    {
+      "name": "1098",
+      "patterns": [
+        "\\b1098\\b"
+      ]
+    },
+    {
+      "name": "Statement",
+      "patterns": [
+        "\\bstatement\\b"
+      ]
+    },
+    {
+      "name": "Mortgage_Statement",
+      "patterns": [
+        "mortgage\\s+statement"
+      ]
+    },
+    {
+      "name": "Trade_Confirmation",
+      "patterns": [
+        "trade\\s+confirmation",
+        "confirm\\w*\\s+of\\s+(?:a\\s+|your\\s+)?(?:purchase|sale|trade)"
+      ]
+    },
+    {
+      "name": "Escrow_Account_Review",
+      "patterns": [
+        "\\bescrow\\b"
+      ]
+    },
+    {
       "name": "W-2",
       "patterns": [
         "\\bW\\s*[-\u2013]?\\s*2\\b(?!\\d)"
@@ -110,6 +202,18 @@
         "tax\\s+form",
         "form\\s+\\d{3,4}"
       ]
+    },
+    {
+      "name": "Contract",
+      "patterns": [
+        "\\bcontract\\b"
+      ]
+    },
+    {
+      "name": "Report",
+      "patterns": [
+        "\\breport\\b"
+      ]
     }
   ],
   "strong_start_patterns": [
@@ -134,16 +238,45 @@
       "fallback: type names are matched case-insensitively, indicators are case-insensitive regexes searched in the document text."
     ],
     "instructions": [
-      "1) Default (most documents): <source>_<type>_<yyyy-mm-dd>. Lowercase the source and type, spaces become hyphens. Example: acme-invoice_2025-10-30.pdf",
-      "2) If the type name already contains the source word (e.g. bank + bank_statement), write it only once. Example: bank-statement_2025-10-01.pdf",
-      "3) Tax documents (1099 series, W-2, 1040, T4 and any other tax form): <tax_year>_<type>_<source>_<yyyy-mm-dd>. The date is one printed on the form; if no date is printed use <tax_year>-12-31, the end of the tax year. Example: 2025_1099-nec_irs_2025-12-31.pdf",
-      "4) LES documents: use only <les>_<yyyy-mm> (the statement's year and month, no day). Example: les_2026-05.pdf",
-      "5) Only use dates that actually appear in the document; never invent a date. For statements or bills covering a period, prefer the period end date or the issue/remit date.",
-      "6) If the document has no usable date at all, omit the date part entirely (keep source and type).",
-      "7) Filename: lowercase, only a-z 0-9 plus _ and -; must end in .pdf; no path, no spaces. Answer with exactly one filename."
+      "You are an expert Data Archivist for a high-net-worth individual. Invent the precise filename for filing this document.",
+      "NAMING CONVENTION:",
+      "Entity_Detail_DocType_YYYY-MM-DD[optional: _to_YYYY-MM-DD].pdf",
+      "EXTRACTION RULES:",
+      "1. ENTITY: The company, bank, or person issuing the doc (e.g. Schwab, IRS, HomeDepot, tenants).",
+      "   - Prefer 'Etrade' if Etrade (Do NOT use Morgan Stanley if it's an Etrade account).",
+      "   - Prefer 'Schwab' instead of CharlesSchwab.",
+      "   - Prefer 'Foxbury Park HOA' instead of 'Foxbury Park'.",
+      "   - Prefer 'Freedom Mortgage' instead of 'FreedomMortgage'.",
+      "   - Prefer 'Hawaii Gas' for Hawaii Gas.",
+      "   - Prefer 'YYYY 1099' for 1099 tax forms.",
+      "   - Prefer 'YYYY 1098' for 1098 tax forms.",
+      "2. DETAIL: Account Type [optional: and Owner if not Jonathan] and last 4 digits of Account number, Invoice number, or Property Name. Keep it short.",
+      "   - For Etrade: If you see 'Traditional IRA', 'Roth IRA', or 'Rollover IRA', use that.",
+      "   - Account Numbers: ALWAYS extract only the final 4 digits.",
+      "   - Account Type: For credit card accounts, output the type of card program and card network. Example: BestBuy Mastercard.",
+      "   - For Trade Confirmations, after the Trade_Confirmation text, include the following: Buy(s) or Sell(s) and #(s) of shares and ticker(s).",
+      "   - Owner: Include Owner if it's Peter, Angela, Anna, Wyatt, Warren but not Jonathan.",
+      "   - For Hawaiian Electric Invoices, output the account number and service address.",
+      "   - For Hawaii Gas Invoices, output the service address and account number.",
+      "3. DOCTYPE: Invoice, Statement, Mortgage_Statement, Receipt, Tax_Form, Contract, Report, Trade_Confirmation, Escrow_Account_Review, 1099-MISC, 1098, 1099-INT.",
+      "4. DATE: Prefer 'Letter Date' or 'Statement Date' or 'Invoice Date'. Prefer Service Period dates for Utility bills or beginning and end dates for policy periods. If not found, use 'Due Date'.",
+      "   - OPTIONAL END DATE: If explicitly covering a date range, append the end date using '_to_YYYY-MM-DD'.",
+      "   - FORMAT: You MUST output dates in strict 'YYYY-MM-DD' or 'YYYY-MM-DD_to_YYYY-MM-DD'.",
+      "5. SECURITY RULE: Never output full account numbers. Digits, only last 4 digits.",
+      "6. LES statements: use only <les>_<yyyy-mm>.pdf (the statement's year and month, no day). Example: les_2026-05.pdf.",
+      "OUTPUT INSTRUCTIONS:",
+      "- Put ONLY the filename in the 'filename' field of the JSON reply (the 'source' and 'type' fields pick the folders from the classification lists, not this convention).",
+      "- Do not use spaces in the filename (use underscores).",
+      "- Do not include explanations, markdown formatting, or introductory text.",
+      "- Do not include any characters not allowed in filenames (letters, digits, hyphens, underscores only).",
+      "- Use sentence case except for names that are not sentence case.",
+      "- Only use dates that actually appear in the document; never invent a date. If there is no usable date at all, omit the date part entirely."
     ],
     "tax_types": [
       "1099-NEC",
+      "1099-MISC",
+      "1099-INT",
+      "1098",
       "W-2",
       "Tax form"
     ],

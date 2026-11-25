@@ -505,15 +505,19 @@ def extract_json_object(text: str):
 
 
 def sanitize_llm_filename(fn: str) -> str:
-    """Coerce an LLM-supplied filename to <safe-name>.pdf ('' if unusable)."""
-    fn = str(fn or "").strip().lower().replace("\\", "/")
+    """Coerce an LLM-supplied filename to <safe-name>.pdf ('' if unusable).
+
+    House style is sentence case, so letter case is preserved; only the
+    characters a .pdf filename may not contain are coerced (everything
+    other than [A-Za-z0-9-] becomes an underscore)."""
+    fn = str(fn or "").strip().replace("\\", "/")
     fn = fn.split("/")[-1]
     fn = re.sub(r"\.pdf$", "", fn, flags=re.IGNORECASE)
-    fn = re.sub(r"[^a-z0-9\-]+", "_", fn)
+    fn = re.sub(r"[^A-Za-z0-9\-]+", "_", fn)
     fn = re.sub(r"_+", "_", fn).strip("_-")
     if not fn:
         return ""
-    return fn[:64] + ".pdf"
+    return fn[:120] + ".pdf"
 
 
 def llm_ingest(llm: LlmSettings, allowed_sources: "list[str]", allowed_types: "list[str]",
