@@ -258,7 +258,15 @@ Constants at the top of `archivist.py`:
 ## Sharing output to OneDrive
 
 No official OneDrive client exists for Linux, so the output folder is pushed
-to your OneDrive with **rclone** (Microsoft Graph). Two complementary paths:
+to your OneDrive with **rclone** (Microsoft Graph). The shared folder is
+kept **flat** — every document lands directly in its root (the
+per-source/per-type subfolders exist only in the local `output/` tree).
+The sync script (`ops/scripts/archivist-onedrive-sync.sh`) stages a
+flattened copy of `output/**/*.pdf` and does a plain `rclone copy` from
+that flat directory, because rclone's `--files-from` entries resolve
+relative to the source and can't remap nested paths onto a flat remote.
+
+Two complementary push paths:
 
 1. **Immediate** — the program runs your `--after-batch` command the moment
    new documents are sorted, so files land in the shared folder seconds
@@ -306,6 +314,11 @@ as environment variables. Failures are logged and never crash the watcher.
   the timer never sees a half-written PDF.
 - If rclone is not configured yet, the sync script exits 0 with a note, so
   the timer runs harmlessly until you complete the setup.
+- Name collisions on the flat folder: `unique_path` suffixes are
+  per-directory, so two documents in different `Source/Type` folders can
+  share a basename. The first file pushed wins (`--ignore-existing`); the
+  duplicate stays in the local `output/` tree, and the script logs a
+  warning listing it.
 
 ### Notes
 

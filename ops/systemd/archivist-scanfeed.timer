@@ -1,0 +1,11 @@
+[Unit]
+Description=Feed Archivist with fresh router scans every ~30s
+Wants=archivist-scanfeed.service
+
+[Timer]
+OnActiveSec=20s
+OnUnitInactiveSec=30s
+RandomizedDelaySec=5
+
+[Install]
+WantedBy=timers.target

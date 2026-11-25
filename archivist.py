@@ -976,9 +976,10 @@ def main() -> int:
             p = os.path.join(root, f)
             batch_docs += handle(p, args, rules, llm, seen)
 
+    if batch_docs and args.after_batch:
+        run_after_batch(args, batch_docs)
+
     if args.once:
-        if batch_docs and args.after_batch:
-            run_after_batch(args, batch_docs)
         log.info("--once: done, exiting")
         return 0
 

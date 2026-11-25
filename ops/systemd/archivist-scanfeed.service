@@ -1,0 +1,10 @@
+[Unit]
+Description=Drain new scans from router share (SMB) into Archivist watch dir
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/home/k0k0
+Environment=PATH=/home/k0k0/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/k0k0/.local/bin/archivist-scanfeed.sh

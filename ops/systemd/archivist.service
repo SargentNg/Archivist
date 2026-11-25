@@ -1,0 +1,15 @@
+[Unit]
+Description=Archivist pipeline (watch/ -> OCR + LLM classify/name -> output/)
+# archivist-scanfeed.timer moves new scans from the router share into
+# watch/; this service does the heavy lifting. The OneDrive push is its
+# --after-batch hook (archivist-onedrive-sync.sh, flat into
+# Family Vault/Scans); archivist-sync.timer is the 10-minute backstop.
+
+[Service]
+WorkingDirectory=%h/opencode/Archivist
+ExecStart=%h/opencode/Archivist/.venv/bin/python archivist.py watch --after-batch %h/.local/bin/archivist-onedrive-sync.sh --log-to archivist.log
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

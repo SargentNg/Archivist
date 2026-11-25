@@ -1,0 +1,11 @@
+[Unit]
+Description=Archivist output sync to OneDrive (rclone)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/home/k0k0
+Environment=PATH=/home/k0k0/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=-/home/k0k0/.config/archivist/onedrive.env
+ExecStart=/home/k0k0/.local/bin/archivist-onedrive-sync.sh

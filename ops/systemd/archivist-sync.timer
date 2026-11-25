@@ -1,0 +1,11 @@
+[Unit]
+Description=Sync Archivist output to OneDrive (safety net for the --after-batch hook)
+
+[Timer]
+OnBootSec=2min
+OnActiveSec=10min
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
