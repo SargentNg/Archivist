@@ -82,6 +82,10 @@ OCR_MIN_CHARS = 25          # fewer than this embedded chars on a page -> OCR
 HEADING_CHARS = 500         # "strong start" patterns only count near the top
 START_SCORE_THRESHOLD = 2   # score needed for a page to begin a new document
 POLL_INTERVAL = 2.0         # fallback watcher interval
+POLL_GRACE_SECONDS = 60.0   # a file may sit unprocessed this long before the
+                            # poll loop takes it over (observer fast path first)
+STALL_WARN_SECONDS = 600.0  # log a warning when the oldest queued file is this old
+STALL_FATAL_SECONDS = 1200.0  # exit non-zero when stuck this long (supervisor restarts)
 LLM_DOC_CHARS = 6000        # how much of a document's text is sent to the LLM
 
 UNCLASSIFIED = "unclassified"
@@ -986,16 +990,60 @@ def main() -> int:
         log.info("watchdog not installed — using polling every %.1fs", POLL_INTERVAL)
         observer = None
 
+    # The inotify handler (if watchdog is installed) is the fast path only;
+    # this loop is the safety net. It re-scans the watch dir unconditionally,
+    # so a missed or lost file event can never wedge the pipeline silently.
+    # `handle()`'s `seen` set keeps the two paths from double-processing a
+    # file. If a file stays queued past STALL_FATAL_SECONDS (hung OCR, dead
+    # worker, ...) we exit non-zero so a supervisor (systemd Restart=always)
+    # — or the operator — notices and restarts us.
+    grace = 0.0 if observer is None else POLL_GRACE_SECONDS
+    queued_at: dict = {}
+    warned: set = set()
+
+    def poll_once(now: float) -> None:
+        nonlocal warned
+        try:
+            names = sorted(n for n in os.listdir(args.watch_dir)
+                           if os.path.isfile(os.path.join(args.watch_dir, n)))
+        except OSError:
+            return
+        for n in list(queued_at):
+            if n not in names:
+                queued_at.pop(n, None)
+        warned = {m for m in warned if m[0] in queued_at}
+        for n in names:
+            queued_at.setdefault(n, now)
+        if not names:
+            return
+        oldest = names[0]
+        age = now - queued_at[oldest]
+        if age >= STALL_WARN_SECONDS:
+            marker = (oldest, int(age // STALL_WARN_SECONDS))
+            if marker not in warned:
+                warned.add(marker)
+                log.warning("no pipeline progress for %.0fs — queue: %s",
+                            age, ", ".join(names))
+        if age >= STALL_FATAL_SECONDS:
+            log.error("pipeline stalled (%.0fs on %s, %d queued) — exiting "
+                      "so the supervisor restarts us", age, oldest, len(names))
+            raise SystemExit(1)
+        for name in names:
+            if now - queued_at[name] < grace:
+                continue  # still inside the observer's fast-path window
+            p = os.path.join(args.watch_dir, name)
+            if not os.path.isfile(p):
+                continue
+            log.info("poll: processing %s (queued %.0fs)", name,
+                     now - queued_at[name])
+            n_docs = handle(p, args, rules, llm, seen)
+            if n_docs:
+                run_after_batch(args, n_docs, name)
+
     try:
         while True:
             time.sleep(5)
-            if observer is None:
-                for name in os.listdir(args.watch_dir):
-                    p = os.path.join(args.watch_dir, name)
-                    if os.path.isfile(p):
-                        n = handle(p, args, rules, llm, seen)
-                        if n:
-                            run_after_batch(args, n, name)
+            poll_once(time.time())
     except KeyboardInterrupt:
         pass
     finally:
