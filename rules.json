@@ -1,0 +1,157 @@
+{
+  "_comment": [
+    "rules for scan_sorter.py - all patterns are case-insensitive Python regexes.",
+    "A page scores each source/type by number of matches; a hit in the top ~500",
+    "chars of the page also earns a +2 'heading' bonus. First match wins exact",
+    "score ties, so put more specific rules earlier.",
+    "Pages that match nothing go to default_source/default_type.",
+    "strong_start_patterns: line-anchored signals that a page likely BEGINS a new",
+    "document (used by boundary detection, only counted near the top of the page).",
+    "continuation_markers: signals a page is a CONTINUATION (not a new document)."
+  ],
+  "sources": [
+    {
+      "name": "IRS",
+      "patterns": [
+        "\\bIRS\\b",
+        "internal\\s+revenue\\s+service",
+        "\\bfederal\\s+government\\b"
+      ]
+    },
+    {
+      "name": "Acme",
+      "patterns": [
+        "\\bacme\\b"
+      ]
+    },
+    {
+      "name": "Bank",
+      "patterns": [
+        "\\bbank\\b",
+        "checking\\s+account",
+        "savings\\s+account",
+        "routing\\s+number"
+      ]
+    },
+    {
+      "name": "Utility",
+      "patterns": [
+        "\\butility\\b",
+        "electric(ity)?\\s+(company|bill)",
+        "gas\\s+company",
+        "water\\s+co\\.?\\b"
+      ]
+    },
+    {
+      "name": "Insurance",
+      "patterns": [
+        "\\binsurance\\b",
+        "policyholder",
+        "premium\\s+(due|payment)"
+      ]
+    },
+    {
+      "name": "Medical",
+      "patterns": [
+        "\\bmedical\\b",
+        "\\bclinic\\b",
+        "\\bphysician\\b",
+        "health\\s+record",
+        "payer\\s*:\\s"
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "1099-NEC",
+      "patterns": [
+        "1099\\s*-?\\s*NEC",
+        "nonemployee\\s+compensation"
+      ]
+    },
+    {
+      "name": "W-2",
+      "patterns": [
+        "\\bW\\s*[-\u2013]?\\s*2\\b(?!\\d)"
+      ]
+    },
+    {
+      "name": "Bank statement",
+      "patterns": [
+        "\\baccount\\s+statement\\b",
+        "statement\\s+date",
+        "account\\s+number",
+        "routing\\s+number"
+      ]
+    },
+    {
+      "name": "Utility bill",
+      "patterns": [
+        "\\butility\\s+bill\\b",
+        "service\\s+period",
+        "\\bconsumption\\b"
+      ]
+    },
+    {
+      "name": "Invoice",
+      "patterns": [
+        "\\binvoice\\b"
+      ]
+    },
+    {
+      "name": "Receipt",
+      "patterns": [
+        "\\breceipt\\b"
+      ]
+    },
+    {
+      "name": "Tax form",
+      "patterns": [
+        "tax\\s+form",
+        "form\\s+\\d{3,4}"
+      ]
+    }
+  ],
+  "strong_start_patterns": [
+    "(?m)^\\s*(invoice|bill|statement|receipt)\\s*(#|no\\.?|number)?\\s*[:\\-]?",
+    "(?m)^\\s*form\\s+\\d{3,4}\\b",
+    "(?m)^\\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?\\s+\\d{1,2},?\\s+\\d{4}\\b",
+    "(?m)^\\s*account\\s*(no|number|ending)\\s*[:\\-]?",
+    "(?m)^\\s*policy\\s*(no|number)\\s*[:\\-]?"
+  ],
+  "continuation_markers": [
+    "see\\s+next\\s+page",
+    "continued\\s+on\\s+(next|the\\s+next)\\s+page",
+    "page\\s+\\d+\\s+of\\s+\\d+"
+  ],
+  "default_source": "unknown",
+  "default_type": "unclassified",
+  "naming": {
+    "_comment": [
+      "How the final .pdf of each sorted document is named.",
+      "'instructions' are fed to the LLM verbatim as naming rules - edit freely.",
+      "tax_types / les_types / les_text_indicators drive the deterministic (no-LLM)",
+      "fallback: type names are matched case-insensitively, indicators are case-insensitive regexes searched in the document text."
+    ],
+    "instructions": [
+      "1) Default (most documents): <source>_<type>_<yyyy-mm-dd>. Lowercase the source and type, spaces become hyphens. Example: acme-invoice_2025-10-30.pdf",
+      "2) If the type name already contains the source word (e.g. bank + bank_statement), write it only once. Example: bank-statement_2025-10-01.pdf",
+      "3) Tax documents (1099 series, W-2, 1040, T4 and any other tax form): <tax_year>_<type>_<source>_<yyyy-mm-dd>. The date is one printed on the form; if no date is printed use <tax_year>-12-31, the end of the tax year. Example: 2025_1099-nec_irs_2025-12-31.pdf",
+      "4) LES documents: use only <les>_<yyyy-mm> (the statement's year and month, no day). Example: les_2026-05.pdf",
+      "5) Only use dates that actually appear in the document; never invent a date. For statements or bills covering a period, prefer the period end date or the issue/remit date.",
+      "6) If the document has no usable date at all, omit the date part entirely (keep source and type).",
+      "7) Filename: lowercase, only a-z 0-9 plus _ and -; must end in .pdf; no path, no spaces. Answer with exactly one filename."
+    ],
+    "tax_types": [
+      "1099-NEC",
+      "W-2",
+      "Tax form"
+    ],
+    "les_types": [
+      "LES"
+    ],
+    "les_text_indicators": [
+      "\\bLES\\b"
+    ]
+  }
+}
