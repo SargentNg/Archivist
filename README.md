@@ -5,8 +5,11 @@ save-to-PDF destination) and automatically sorts each PDF into
 `<output>/<source>/<type>/<filename>.pdf` based on its content.
 
 Every scanned page is read (embedded text layer, or Tesseract OCR when the
-page is image-only), classified per page, and page-boundary heuristics split
-a multi-document scan into separate output files. Once a document is
+page is image-only); pages that needed OCR get that text written back into
+the output PDF as an **invisible text layer**, so every output is
+text-searchable and no companion text files are produced. Each page is
+classified, and page-boundary heuristics split a multi-document scan into
+separate output files. Once a document is
 complete, an LLM (OpenAI-compatible chat endpoint — llama-swap by default)
 confirms its source/type and invents the final filename according to the
 naming instructions in `rules.json` (source-type-date, with tax and LES
@@ -61,7 +64,7 @@ One-shot mode — process whatever is already in the folder, then exit
 | `--dpi N` | `200` | Rendering resolution for OCR |
 | `--once` | off | Process existing files, then exit |
 | `--keep-originals` | off | Don't move originals to `processed/` |
-| `--no-text` | off | Don't write `.txt` dumps next to outputs |
+| `--no-embed-ocr` | off | Don't write the OCR text layer into output PDFs (image-only pages would stay non-searchable) |
 | `--leave-crud` | off | Don't move non-PDF files to `skipped/` |
 | `--log-to FILE` | stderr | Also log to a file |
 | `--no-llm` | off | Disable LLM classification/naming (rules only) |
@@ -74,7 +77,7 @@ One-shot mode — process whatever is already in the folder, then exit
 | `--llm-think` | off | Don't request reasoning suppression (slower) |
 | `--after-batch CMD` | off | Shell command run after new documents are sorted, e.g. a `rclone copy` to a shared OneDrive folder (see “Sharing output to OneDrive”) |
 | `--after-batch-timeout SECS` | `600` | Max seconds for the `--after-batch` command |
-| `--tag-in-name` / `--no-tag-in-name` | on | Append the `_digital` / `_scanned` / `_digital-scanned` tag to output filenames (the tag is always in the PDF metadata too) |
+| `--tag-in-name` / `--no-tag-in-name` | off | Also append the `_digital` / `_scanned` / `_digital-scanned` tag to output filenames (default: the tag lives only in the PDF metadata) |
 
 ### What happens to files
 
@@ -88,13 +91,11 @@ One-shot mode — process whatever is already in the folder, then exit
   - Each output's log line reports which path a document took:
     `digital`, `scanned (all pages OCR)`, or `digital-scanned (n/m pages OCR)`.
 - **Provenance tag.** Every output PDF is tagged as `digital`, `scanned`,
-  or `digital-scanned` (both, i.e. a mixed bundle) in two places:
-  - in the filename — `acme-invoice_2025-11-03_digital.pdf`,
-    `utility-bill_2025-10-31_scanned.pdf` — appended by the program on top
-    of the LLM/rule name (`--no-tag-in-name` to keep names bare)
-  - in the PDF's own metadata: `keywords` = the tag, `title` = the filename,
-    `creator` = `Archivist` — visible in any viewer's document properties
-    and greppable (`pdftotext -v` aside, `fitz` / `pdfinfo` can read it)
+  or `digital-scanned` (both, i.e. a mixed bundle) in the PDF's own
+  metadata: `keywords` = the tag (plus the embedded OCR word count, when
+  a text layer was written), `title` = the filename, `creator` =
+  `archivist` — visible in any viewer's document properties. `--tag-in-name`
+  additionally appends the tag to the filename.
 - **PDFs** are processed, then the original is moved to
   `<watch-dir>/processed/` (unless `--keep-originals`).
 - **Non-PDFs** are moved to `<watch-dir>/skipped/` (unless `--leave-crud`).
@@ -108,8 +109,6 @@ One-shot mode — process whatever is already in the folder, then exit
   rules-based name is used (same conventions, date found by regex). If both
   somehow fail the output is never empty — name collisions get a
   `_2`, `_3`, … suffix.
-- A `.txt` with the page text is written next to each output PDF unless
-  `--no-text` is given.
 
 Files smaller than nothing / zero-byte, partially-written PDFs are ignored
 until their size is stable (`--settle` window, 2 s).
@@ -242,8 +241,9 @@ Constants at the top of `archivist.py`:
 ## Notes / caveats
 
 - Rule matching is heuristic: a scanner feed with an entirely new issuer
-  will land in `unknown/unclassified` until you add a rule for it. Review
-  the dumped `.txt` files to see what text you can key your regexes on.
+  will land in `unknown/unclassified` until you add a rule for it. The
+  output PDFs are text-searchable, so `pdftotext` on the sorted file shows
+  the text you can key your regexes on.
 - If Tesseract is missing or times out, OCR'ed pages degrade to whatever
   text is available (possibly none) and the page is unclassifiable, but the
   script **does not crash**.

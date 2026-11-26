@@ -12,7 +12,7 @@ All units are **user** units (`systemctl --user ...`); with
 | `systemd/archivist-scanfeed.{service,timer}` | Every ~30 s, drains the router's SMB share (the HP scanner's save-to-PDF destination) into `watch/`. |
 | `systemd/archivist-sync.{service,timer}` | Every 10 min, re-runs the OneDrive sync as a backstop, catching anything a per-file push missed (network blip, pre-hook backlog). |
 | `scripts/archivist-scanfeed.sh` | One feed pass: `rclone move` from the `scanner:` remote into `watch/`, skipping files modified within a settle window (`ARCHIVIST_SCAN_SETTLE`, default 60 s) so half-written scanner PDFs are never pulled. |
-| `scripts/archivist-onedrive-sync.sh` | Flattens `output/**/*.pdf` into a staging dir, then a plain `rclone copy --ignore-existing` into the shared folder (default `onedrive:Family Vault/Scans`). **PDFs only** — OCR sidecars stay in the local `output/`. |
+| `scripts/archivist-onedrive-sync.sh` | Flattens `output/**/*.pdf` into a staging dir, then a plain `rclone copy --ignore-existing` into the shared folder (default `onedrive:Family Vault/Scans`). **PDFs only** — the OCR text lives inside the PDFs as an invisible layer, so there are no companion files to sync. |
 
 ## Install (one time)
 

@@ -108,6 +108,22 @@
         "health\\s+record",
         "payer\\s*:\\s"
       ]
+    },
+    {
+      "name": "Citi Bank",
+      "patterns": [
+        "citi\\s*bank",
+        "\\bcitibank\\b",
+        "\\bciti\\b"
+      ]
+    },
+    {
+      "name": "Aces ABA",
+      "patterns": [
+        "aces\\s+aba",
+        "\\bacessaba\\b",
+        "applied\\s+behavior\\s+analysis"
+      ]
     }
   ],
   "types": [
@@ -248,16 +264,18 @@
       "   - Prefer 'Foxbury Park HOA' instead of 'Foxbury Park'.",
       "   - Prefer 'Freedom Mortgage' instead of 'FreedomMortgage'.",
       "   - Prefer 'Hawaii Gas' for Hawaii Gas.",
+       "   - 'ACESaba' is written 'Aces ABA' (ABA = Applied Behavior Analysis).",
       "   - For 1099 tax forms, ENTITY is the tax year only ('YYYY', e.g. '2025'). The specific form (1099-NEC, 1099-MISC, 1099-INT) is the DocType - do not repeat '1099' in ENTITY.",
       "   - For 1098 tax forms, ENTITY is the tax year only ('YYYY', e.g. '2025'); do not repeat '1098'.",
       "2. DETAIL: Account Type [optional: and Owner if not Jonathan] and last 4 digits of Account number, Invoice number, or Property Name. Keep it short.",
       "   - For Etrade: If you see 'Traditional IRA', 'Roth IRA', or 'Rollover IRA', use that.",
-      "   - Account Numbers: ALWAYS extract only the final 4 digits.",
+      "   - Account Numbers: ALWAYS extract only the final 4 digits, from the 16-digit card/account number (e.g. card 5121065276769003 gives 9003). If several numbers appear, prefer the long card/account number; NEVER take last-4 from a phone, statement reference, or confirmation number.",
       "   - Account Type: For credit card accounts, output the type of card program and card network. Example: BestBuy Mastercard.",
       "   - For Trade Confirmations, after the Trade_Confirmation text, include the following: Buy(s) or Sell(s) and #(s) of shares and ticker(s).",
       "   - Owner: Include Owner if it's Peter, Angela, Anna, Wyatt, Warren but not Jonathan.",
       "   - For Hawaiian Electric Invoices, output the account number and service address.",
       "   - For Hawaii Gas Invoices, output the service address and account number.",
+       "   - Street addresses in DETAIL: house number and street as separate underscore groups, natural case: 9732_203rd_St_E. Never glue the house number onto the street number (not 9732203rd).",
       "3. DOCTYPE: Invoice, Statement, Mortgage_Statement, Receipt, Tax_Form, Contract, Report, Trade_Confirmation, Escrow_Account_Review, 1099-MISC, 1098, 1099-INT.",
       "4. DATE: Prefer 'Letter Date' or 'Statement Date' or 'Invoice Date'. Prefer Service Period dates for Utility bills or beginning and end dates for policy periods. If not found, use 'Due Date'.",
       "   - OPTIONAL END DATE: If explicitly covering a date range, append the end date using '_to_YYYY-MM-DD'.",
@@ -267,6 +285,8 @@
       "OUTPUT INSTRUCTIONS:",
       "- Put ONLY the filename in the 'filename' field of the JSON reply (the 'source' and 'type' fields pick the folders from the classification lists, not this convention).",
       "- Do not use spaces in the filename (use underscores).",
+      "- Separate every word and number group with an underscore - no run-together words (Home_Depot, not HomeDepot; Pierce_County, not PierceCounty). Established one-word brand spellings stay (GameStop, Kohls).",
+      "- Never append a provenance suffix like _scanned or _digital; provenance travels in the PDF metadata.",
       "- Do not include explanations, markdown formatting, or introductory text.",
       "- Do not include any characters not allowed in filenames (letters, digits, hyphens, underscores only).",
       "- Use sentence case except for names that are not sentence case.",

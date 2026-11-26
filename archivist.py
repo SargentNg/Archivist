@@ -20,8 +20,9 @@ How it works
      <source>_<type>_<yyyy-mm-dd>, tax docs use
      <year>_<type>_<source>_<date>, LES docs use <les>_<yyyy-mm>;
    - writes each document as its own PDF into
-     <output>/<source>/<type>/<name>.pdf  (plus a .txt with the extracted
-     text, unless --no-text);
+     <output>/<source>/<type>/<name>.pdf; for pages that needed OCR,
+     the OCR text is written into the PDF itself as an invisible text
+      layer, so every output is text-searchable (--no-embed-ocr skips it);
    - moves the original to <watch-dir>/processed/ (unless --keep-originals).
 3. Non-PDF files are moved to <watch-dir>/skipped/ (or left alone with
    --leave-crud).
@@ -37,7 +38,7 @@ Options:
     --dpi N            OCR render resolution (default 200)
     --once             process existing files, then exit (no watching)
     --keep-originals   don't move originals to processed/
-    --no-text          don't write .txt text dumps next to sorted PDFs
+    --no-embed-ocr     don't write the OCR text layer into the PDF pages
     --leave-crud       don't move non-PDF files to skipped/
     --log-to FILE      also write logs to this file
     --after-batch CMD  shell command run after new docs are sorted (env:
@@ -164,23 +165,27 @@ def classify_page(text: str, rules: dict) -> tuple[str, str]:
 # --------------------------------------------------------------------------
 # page text (embedded text + OCR fallback)
 # --------------------------------------------------------------------------
-def ocr_page(page: "pymupdf.Page", dpi: int) -> str:
+def ocr_page(page: "pymupdf.Page", dpi: int) -> tuple[str, list]:
+    """OCR one rendered page. Returns (plain text, word boxes); the text
+    feeds classification/LLM, the boxes later become the PDF's invisible
+    OCR text layer."""
     pix = page.get_pixmap(matrix=pymupdf.Matrix(dpi / 72, dpi / 72))
     tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     tmp.close()
     try:
         pix.save(tmp.name)
-        res = subprocess_run_tesseract(tmp.name)
-        return res
+        tsv = subprocess_run_tesseract(tmp.name)
     finally:
         os.unlink(tmp.name)
+    return parse_tesseract_tsv(tsv, pix.width, pix.height)
 
 
 def subprocess_run_tesseract(png_path: str) -> str:
+    """Run tesseract with TSV output; returns raw TSV ('' on any failure)."""
     import subprocess
     try:
         out = subprocess.run(
-            ["tesseract", png_path, "stdout", "--psm", "6", "-l", "eng"],
+            ["tesseract", png_path, "stdout", "--psm", "6", "-l", "eng", "tsv"],
             capture_output=True, text=True, timeout=120, check=False,
         )
         return out.stdout or ""
@@ -192,6 +197,46 @@ def subprocess_run_tesseract(png_path: str) -> str:
         return ""
 
 
+def parse_tesseract_tsv(tsv: str, png_w: int, png_h: int) -> tuple[str, list]:
+    """Split Tesseract TSV stdout into (plain text, word boxes).
+
+    Plain text groups words by block/paragraph/line in reading order — the
+    classification/LLM input. Word boxes are page-fraction tuples
+    (fx, fy, fw, fh, word) so they scale to the output PDF regardless of
+    the render DPI used for OCR."""
+    plain_lines: list[str] = []
+    words: list[tuple] = []
+    lines: dict[tuple, list[str]] = {}
+    line_order: list[tuple] = []
+    for ln in (tsv.splitlines()[1:] if tsv else []):
+        cols = ln.split("\t")
+        if len(cols) < 12:
+            continue
+        try:
+            if int(cols[0]) != 5:            # level 5 = word
+                continue
+            word = cols[11].strip()
+            if not word:
+                continue
+            if float(cols[10]) < 0:          # negative conf = word rejected
+                continue
+            left, top, width, height = (float(cols[i]) for i in range(6, 10))
+            if not (0 <= left < png_w and 0 <= top < png_h
+                    and 0 < width and 0 < height):
+                continue
+        except ValueError:
+            continue
+        words.append((left / png_w, top / png_h, width / png_w, height / png_h, word))
+        key = (cols[2], cols[3], cols[4])
+        if key not in lines:
+            lines[key] = []
+            line_order.append(key)
+        lines[key].append(word)
+    for key in line_order:
+        plain_lines.append(" ".join(lines[key]).rstrip())
+    return "\n".join(plain_lines).strip(), words
+
+
 @dataclass
 class Page:
     index: int              # 0-based
@@ -199,6 +244,7 @@ class Page:
     ocr: bool = False
     source: str = field(default="")
     type: str = field(default="")
+    words: list = field(default_factory=list)   # OCR word boxes, page fractions
 
 
 def extract_pages(pdf_path: str, dpi: int, rules: dict) -> list[Page]:
@@ -208,18 +254,21 @@ def extract_pages(pdf_path: str, dpi: int, rules: dict) -> list[Page]:
         for i, page in enumerate(doc):
             text = page.get_text("text").strip()
             ocr_used = False
+            words: list = []
             if len(text) < OCR_MIN_CHARS:
                 # image-only page (paper scan from the scanner): OCR first,
                 # then the text goes on to everything else (boundary
-                # detection, classification, LLM ingest)
-                text = ocr_page(page, dpi).strip()
+                # detection, classification, LLM ingest) and the word
+                # boxes are written back into the output PDF later
+                text, words = ocr_page(page, dpi)
+                text = text.strip()
                 ocr_used = bool(text)
             else:
                 # digital page: the embedded text layer is used as-is,
                 # no OCR, straight through to the document/LLM stages
                 log.debug("page %d: digital (%d embedded chars), no OCR",
                           i + 1, len(text))
-            p = Page(index=i, text=text, ocr=ocr_used)
+            p = Page(index=i, text=text, ocr=ocr_used, words=words)
             if ocr_used:
                 log.debug("page %d: scanned, OCR'd (%d chars)", i + 1, len(text))
             p.source, p.type = classify_page(text, rules)
@@ -334,12 +383,54 @@ def unique_path(path: str) -> str:
     return f"{stem}_{n}{ext}"
 
 
+# The invisible layer uses the base-14 Helvetica with the Latin-1
+# encoding, so words are pre-mapped onto printable Latin-1 (OCR output
+# is English; the fold below only affects exotic glyphs, e.g. é -> e).
+_LATIN1_FALLBACK = {
+    "–": "-", "—": "-", "’": "'", "‘": "'", "“": '"', "”": '"',
+    "·": "-", "…": "...",
+    "é": "e", "è": "e", "ê": "e", "ë": "e", "à": "a", "â": "a",
+    "ù": "u", "û": "u", "ü": "u", "ô": "o", "ö": "o", "ò": "o",
+    "í": "i", "î": "i", "ï": "i", "ñ": "n", "ç": "c", "ß": "ss",
+}
+
+
+def _to_latin1(s: str) -> str:
+    for k, v in _LATIN1_FALLBACK.items():
+        if k in s:
+            s = s.replace(k, v)
+    return s.encode("latin-1", "replace").decode("latin-1")
+
+
+def embed_ocr_words(page: "pymupdf.Page", words: list) -> int:
+    """Write OCR word boxes into the PDF as an INVISIBLE text layer
+    (render mode 3): not drawn on screen, but searchable/selectable by
+    every PDF text engine. Returns the number of words written."""
+    r = page.rect
+    n = 0
+    for fx, fy, fw, fh, word in words:
+        word = _to_latin1(word)
+        if not word:
+            continue
+        fs = max(6.0, fh * r.height * 0.9)
+        x = min(max(fx * r.width, 2.0), max(r.width - 2.0, 2.0))
+        y = min(max((fy + fh) * r.height, fs + 2.0), max(r.height - 2.0, fs + 2.0))
+        page.insert_text((x, y), word, fontsize=fs, fontname="helv",
+                         render_mode=3, overlay=True)
+        n += 1
+    return n
+
+
 def write_document(pdf_src: str, page_idxs: list[int], out_path: str,
-                   tag: str = "") -> str:
+                   tag: str = "", pages: "list[Page] | None" = None,
+                   embed_ocr: bool = True) -> str:
     """Extract selected pages into a new PDF; returns the written path.
 
-    `tag` (digital | scanned | digital-scanned) is stamped into the PDF's
-    metadata (keywords) so provenance travels with the file.
+    For pages that were OCR'd, the OCR word boxes are written in as an
+    invisible text layer so the output stays text-searchable (no
+    companion .txt files). `tag` (digital | scanned | digital-scanned)
+    is stamped into the PDF's metadata (keywords) so provenance travels
+    with the file.
     """
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     tmp = tempfile.NamedTemporaryFile(
@@ -347,27 +438,26 @@ def write_document(pdf_src: str, page_idxs: list[int], out_path: str,
     tmp.close()
     src = pymupdf.open(pdf_src)
     dst = pymupdf.open()
+    n_embed = 0
     try:
         dst.insert_pdf(src, from_page=page_idxs[0], to_page=page_idxs[-1])
+        if pages and embed_ocr:
+            for i, idx in enumerate(page_idxs):
+                if pages[idx].words:
+                    n_embed += embed_ocr_words(dst[i], pages[idx].words)
         if tag:
             dst.set_metadata({
                 "title": os.path.splitext(os.path.basename(out_path))[0],
-                "keywords": tag,
+                "keywords": tag + (f" | ocr text layer: {n_embed} words"
+                                   if n_embed else ""),
                 "creator": "archivist",
             })
-        dst.save(tmp.name)
+        dst.save(tmp.name, garbage=3, deflate=True)
     finally:
         src.close()
         dst.close()
     os.replace(tmp.name, out_path)  # atomic: readers never see a partial PDF
     return out_path
-
-
-def write_text_dump(txt: str, pdf_path: str) -> None:
-    tmp = pdf_path + ".txt.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(txt)
-    os.replace(tmp, pdf_path + ".txt")
 
 
 # --------------------------------------------------------------------------
@@ -518,6 +608,15 @@ def sanitize_llm_filename(fn: str) -> str:
     fn = fn.split("/")[-1]
     fn = re.sub(r"\.pdf$", "", fn, flags=re.IGNORECASE)
     fn = re.sub(r"[^A-Za-z0-9\-]+", "_", fn)
+    # separate digit groups from words (94216Makamaka -> 94216_Makamaka),
+    # masking ordinal suffixes first so "203rd" stays "203rd"
+    _SEND = chr(1)  # sentinel, removed after the split below
+    # mask ordinals (203rd, 4th, 203RD) so the digit->letter split below
+    # cannot tear them into "203_rd"
+    fn = re.sub(r"(\d)(?:ST|st|ND|nd|RD|rd|TH|th)",
+                lambda m: m[1] + _SEND + m[0][1:], fn)
+    fn = re.sub(r"(\d)([A-Za-z])", r"\1_\2", fn)
+    fn = fn.replace(_SEND, "")
     fn = re.sub(r"_+", "_", fn).strip("_-")
     if not fn:
         return ""
@@ -788,9 +887,8 @@ def process_file(path: str, args, rules: dict, llm: LlmSettings) -> int:
             out_name = f"{base}_{tag}{ext}"  # program-side tag; LLM names stay clean
         out_dir = os.path.join(args.output_dir, sanitize(source), sanitize(dtype))
         out_path = unique_path(os.path.join(out_dir, out_name))
-        write_document(path, doc, out_path, tag=tag)
-        if args.text:
-            write_text_dump(full, out_path)
+        write_document(path, doc, out_path, tag=tag, pages=pages,
+                       embed_ocr=not args.no_embed_ocr)
         log.info("  -> %s  [source=%s type=%s | %s]", out_path, source, dtype,
                  document_kind(pages, doc))
 
@@ -823,6 +921,11 @@ def wait_until_stable(path: str) -> bool:
 def handle(path: str, args, rules, llm: LlmSettings, seen: set) -> int:
     """Process one file; returns the number of new output documents written."""
     if not path.startswith(os.path.abspath(args.watch_dir) + os.sep):
+        return 0
+    # never re-process our own outputs (matters when the output dir is
+    # nested inside the watched dir): outputs are freshly written PDFs
+    # that would otherwise be fed back in as inputs
+    if os.path.abspath(path).startswith(os.path.abspath(args.output_dir) + os.sep):
         return 0
     rel = os.path.relpath(path, args.watch_dir)
     if rel.split(os.sep)[0] in ("processed", "skipped"):
@@ -911,7 +1014,9 @@ def main() -> int:
     ap.add_argument("--dpi", type=int, default=200)
     ap.add_argument("--once", action="store_true", help="process current files, then exit")
     ap.add_argument("--keep-originals", action="store_true")
-    ap.add_argument("--no-text", action="store_true", help="don't write .txt dumps")
+    ap.add_argument("--no-embed-ocr", dest="no_embed_ocr", action="store_true",
+                    help="don't write the OCR text layer into the output PDFs "
+                         "(image-only pages would stay non-searchable)")
     ap.add_argument("--leave-crud", action="store_true")
     ap.add_argument("--log-to", dest="log_to", default=None)
     ap.add_argument("--no-llm", action="store_true",
@@ -929,11 +1034,11 @@ def main() -> int:
     ap.add_argument("--llm-think", action="store_true",
                     help="don't request reasoning suppression (slower, used if "
                          "your backend proves flaky without it)")
-    ap.add_argument("--tag-in-name", dest="tag_in_name", action="store_true", default=True,
+    ap.add_argument("--tag-in-name", dest="tag_in_name", action="store_true", default=False,
                     help="append the digital/scanned/digital-scanned tag to output "
-                         "filenames (default on; the tag is also in the PDF metadata)")
+                         "filenames (default off; the tag is always in the PDF metadata)")
     ap.add_argument("--no-tag-in-name", dest="tag_in_name", action="store_false",
-                    help="keep filenames exactly as the naming rules dictate")
+                    help="keep filenames exactly as the naming rules dictate (default)")
     ap.add_argument("--llm-max-tokens", type=int, default=2000,
                     help="answer budget; reasoning tokens count against it (default %(default)s)")
     ap.add_argument("--after-batch", default=None, metavar="CMD",
@@ -946,7 +1051,6 @@ def main() -> int:
 
     args.watch_dir = os.path.abspath(args.watch_dir or args.watch_dir_pos or ".")
     args.output_dir = os.path.abspath(args.output_dir)
-    args.text = not args.no_text
 
     logp = logging.StreamHandler(sys.stdout)
     logp.setFormatter(logging.Formatter("%(asctime)s  %(levelname)-7s  %(message)s", "%H:%M:%S"))

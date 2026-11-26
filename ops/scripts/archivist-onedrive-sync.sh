@@ -14,8 +14,9 @@
 # never deletes or overwrites anything already in the shared folder, so
 # files family members add/upload are never touched.
 #
-# The .txt OCR sidecars stay in the local output/ tree (audit/grep); the
-# family folder receives PDFs only (the pre-existing archive is 100% PDFs).
+# The family folder receives PDFs only (the pre-existing archive is 100%
+# PDFs). The PDFs themselves carry the OCR text as an invisible layer,
+# so they are text-searchable; no companion files are produced.
 set -u
 
 RCLONE="$HOME/.local/bin/rclone"
